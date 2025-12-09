@@ -139,3 +139,14 @@ export const evaluateSubmission = async (submissionId, evaluationData) => {
     body: JSON.stringify(evaluationData),
   });
 };
+
+export const getMentorProfile = async () => {
+  return apiCall('/mentor/profile');
+};
+
+export const updateMentorProfile = async (profileData) => {
+  return apiCall('/mentor/profile/update', {
+    method: 'POST',
+    body: JSON.stringify(profileData),
+  });
+};

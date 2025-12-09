@@ -397,6 +397,42 @@ app.post('/team/:id/leave', isLoggedIn, async (req, res) => {
 
 // ========== MENTOR ROUTES (Basic - you mentioned to leave for now) ==========
 
+// Get mentor profile
+app.get('/mentor/profile', isLoggedIn, async (req, res) => {
+  try {
+    if (req.user.role !== 'mentor') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const user = await userModel.findById(req.user.id).select('-password');
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Update mentor profile
+app.post('/mentor/profile/update', isLoggedIn, async (req, res) => {
+  try {
+    if (req.user.role !== 'mentor') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const { name, bio, company, jobRole, expertise, yearsOfExperience } = req.body;
+    
+    const user = await userModel.findByIdAndUpdate(
+      req.user.id,
+      { name, bio, company, jobRole, expertise, yearsOfExperience },
+      { new: true }
+    ).select('-password');
+    
+    res.json({ success: true, message: 'Profile updated', user });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+
 // Create task (mentor only)
 app.post('/mentor/task/create', isLoggedIn, async (req, res) => {
   try {
