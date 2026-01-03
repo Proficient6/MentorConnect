@@ -9,7 +9,7 @@ import Navbar from './components/Navbar';
 import Signup from './components/Signup';
 import Login from './components/Login';
 import StudentDashboard from './components/StudentDashboard';
-import MentorDashboard from './components/MentorDashboard';
+import MentorDashboardEnhanced from './components/MentorDashboardEnhanced';
 import StudentProfile from './components/StudentProfile';
 import MentorProfile from './components/MentorProfile';
 import BrowseTasks from './components/BrowseTasks';
@@ -18,6 +18,7 @@ import TaskSubmission from './components/TaskSubmission';
 import MentorTaskCreate from './components/MentorTaskCreate';
 import MentorEvaluation from './components/MentorEvaluation';
 import TaskChat from './components/TaskChat';
+import TaskDetail from './components/TaskDetail';
 
 /* ----------------- HomePage (keeps your Tailwind & props) ----------------- */
 function HomePage({ setCurrentPage }) {
@@ -133,13 +134,21 @@ function AppInner() {
   };
 
   // This function is passed to child components as setCurrentPage(...) to preserve backward compatibility.
-  const setCurrentPage = (pageOrPath) => {
+  const setCurrentPage = (pageOrPath, params = {}) => {
     // allow both full paths or page keys
     if (typeof pageOrPath !== 'string') return;
     if (pageOrPath.startsWith('/')) {
       navigate(pageOrPath);
     } else {
-      navigate(mapPageToPath(pageOrPath));
+      const basePath = mapPageToPath(pageOrPath);
+      // For team management, pass action as URL param
+      if (pageOrPath === 'team-management' && params.action) {
+        navigate(`${basePath}?action=${params.action}`);
+      } else if (params.id) {
+        navigate(`${basePath}/${params.id}`);
+      } else {
+        navigate(basePath);
+      }
     }
   };
 
@@ -231,7 +240,7 @@ function AppInner() {
             path="/mentor/dashboard"
             element={
               isLoggedIn && userRole === 'mentor' ? (
-                <MentorDashboard setCurrentPage={setCurrentPage} userData={userData} />
+                <MentorDashboardEnhanced setCurrentPage={setCurrentPage} userData={userData} />
               ) : (
                 <Navigate to="/login" />
               )
@@ -250,7 +259,8 @@ function AppInner() {
 
           {/* Tasks & other pages (you can add setCurrentPage prop to those that expect it) */}
           <Route path="/tasks" element={<BrowseTasks setCurrentPage={setCurrentPage} />} />
-          <Route path="/task/:id" element={<TaskSubmission setCurrentPage={setCurrentPage} />} />
+          <Route path="/task/:id" element={<TaskSubmission setCurrentPage={setCurrentPage} userData={userData} />} />
+          <Route path="/task/:id/details" element={<TaskDetail setCurrentPage={setCurrentPage} userData={userData} />} />
 
           {/* Team management, Mentor create/eval routes — add or adjust as needed */}
           <Route path="/team-management" element={<TeamManagement setCurrentPage={setCurrentPage} />} />

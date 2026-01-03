@@ -40,7 +40,7 @@ const submissionSchema = mongoose.Schema({
   // Status tracking
   status: {
     type: String,
-    enum: ['pending', 'submitted', 'reviewed'],
+    enum: ['pending', 'in-progress', 'submitted', 'reviewed'],
     default: 'pending'
   },
   

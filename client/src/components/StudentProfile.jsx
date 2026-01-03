@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Mail, Github, Linkedin, Award, Edit2 } from 'lucide-react';
-import { getStudentProfile, updateStudentProfile } from '../utils/api';
+import { getStudentProfile, updateStudentProfile, getBadges } from '../utils/api';
 
 // Student Profile Component with backend integration
 function StudentProfile({ setCurrentPage, userData }) {
@@ -10,6 +10,7 @@ function StudentProfile({ setCurrentPage, userData }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [badges, setBadges] = useState([]);
   
   // Profile data state
   const [profileData, setProfileData] = useState({
@@ -23,16 +24,23 @@ function StudentProfile({ setCurrentPage, userData }) {
     newSkill: ''
   });
 
-  // Mock badges
-  const badges = [
-    { id: 1, name: 'First Task Completed', icon: '🎯' },
-    { id: 2, name: 'Team Player', icon: '👥' },
-    { id: 3, name: 'Quick Learner', icon: '⚡' }
-  ];
+  // Fetch badges
+  const fetchBadges = async () => {
+    try {
+      const response = await getBadges();
+      if (response.success) {
+        setBadges(response.badges || []);
+      }
+    } catch (err) {
+      console.error('Failed to load badges:', err);
+      setBadges([]);
+    }
+  };
 
-  // Fetch profile on mount
+  // Fetch profile and badges on mount
   useEffect(() => {
     fetchProfile();
+    fetchBadges();
   }, []);
 
   const fetchProfile = async () => {
@@ -231,12 +239,19 @@ function StudentProfile({ setCurrentPage, userData }) {
               </div>
               
               <div className="space-y-3">
-                {badges.map(badge => (
-                  <div key={badge.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <span className="text-2xl">{badge.icon}</span>
-                    <span className="text-sm text-gray-800">{badge.name}</span>
-                  </div>
-                ))}
+                {badges.length > 0 ? (
+                  badges.map(badge => (
+                    <div key={badge._id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <span className="text-2xl">{badge.icon || '🏆'}</span>
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-800">{badge.name}</p>
+                        <p className="text-xs text-gray-500">{badge.description || ''}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-sm">No badges earned yet. Keep completing tasks!</p>
+                )}
               </div>
             </div>
           </div>

@@ -16,6 +16,11 @@ const userModel = require('./models/user');
 const taskModel = require('./models/task');
 const teamModel = require('./models/team');
 const submissionModel = require('./models/submission');
+const chatModel = require('./models/chat');
+const videoChatModel = require('./models/videoChat');
+const notificationModel = require('./models/notification');
+const badgeModel = require('./models/badge');
+const teamChatModel = require('./models/teamChat');
 
 const app = express();
 const server = http.createServer(app);
@@ -110,9 +115,9 @@ io.on('connection', (socket) => {
     socket.broadcast.to(`task-${taskId}`).emit("show-typing", { userId });
   });
 
-  // Send message inside a task room
+  // Send message inside a task room - with database storage
   socket.on('task-message', async (data) => {
-    const { taskId, userId, userName, message } = data;
+    const { taskId, userId, userName, message, userRole } = data;
 
     // Message Validation
     if (!taskId) return;
@@ -120,16 +125,100 @@ io.on('connection', (socket) => {
     if (message.trim().length === 0) return;
     if (message.length > 500) return; // (optional) max length rule
 
-    const messageData = {
-      userId,
-      userName,
-      message: message.trim(),
-      timestamp: new Date(),
-      taskId
-    };
+    try {
+      const chatModel = require('./models/chat');
+      
+      // Save message to database
+      const savedMessage = await chatModel.create({
+        taskId,
+        senderId: userId,
+        message: message.trim(),
+        senderName: userName,
+        senderRole: userRole || 'student',
+        createdAt: new Date()
+      });
+      
+      const messageData = {
+        _id: savedMessage._id,
+        userId,
+        userName,
+        message: message.trim(),
+        timestamp: new Date(),
+        taskId,
+        userRole: userRole || 'student'
+      };
 
-    // Send message to everyone in the room
-    io.to(`task-${taskId}`).emit('new-task-message', messageData);
+      // Send message to everyone in the room
+      io.to(`task-${taskId}`).emit('new-task-message', messageData);
+    } catch (err) {
+      console.error('Error saving message:', err);
+    }
+  });
+
+  // ========== TEAM CHAT Socket.io Handlers ==========
+
+  // Join team chat room
+  socket.on('join-team-room', (teamId) => {
+    if (!teamId) return;
+    socket.join(`team-${teamId}`);
+    socket.broadcast.to(`team-${teamId}`).emit('team-user-joined', { teamId });
+  });
+
+  // Team typing indicator
+  socket.on('team-user-typing', ({ teamId, userId, userName }) => {
+    if (!teamId || !userId) return;
+    socket.broadcast.to(`team-${teamId}`).emit('team-user-typing', { userId, userName });
+  });
+
+  // Stop typing in team
+  socket.on('team-user-stopped-typing', ({ teamId, userId }) => {
+    if (!teamId || !userId) return;
+    socket.broadcast.to(`team-${teamId}`).emit('team-user-stopped-typing', { userId });
+  });
+
+  // Send team message - with database storage
+  socket.on('team-message', async (data) => {
+    const { teamId, userId, userName, message, userRole } = data;
+
+    // Message Validation
+    if (!teamId || !userId || !message) return;
+    if (typeof message !== "string" || message.trim().length === 0) return;
+    if (message.length > 500) return;
+
+    try {
+      // Save message to database
+      const savedMessage = await teamChatModel.create({
+        teamId,
+        senderId: userId,
+        message: message.trim(),
+        senderName: userName,
+        senderRole: userRole || 'student',
+        messageType: 'text',
+        createdAt: new Date()
+      });
+      
+      const messageData = {
+        _id: savedMessage._id,
+        senderId: userId,
+        senderName: userName,
+        message: message.trim(),
+        senderRole: userRole || 'student',
+        createdAt: savedMessage.createdAt,
+        teamId
+      };
+
+      // Send message to everyone in the team room
+      io.to(`team-${teamId}`).emit('new-team-message', messageData);
+    } catch (err) {
+      console.error('Error saving team message:', err);
+    }
+  });
+
+  // Leave team room
+  socket.on('leave-team-room', (teamId) => {
+    if (!teamId) return;
+    socket.leave(`team-${teamId}`);
+    socket.broadcast.to(`team-${teamId}`).emit('team-user-left', { teamId });
   });
 
   // Disconnect handling
@@ -407,6 +496,17 @@ app.post('/tasks/:id/apply', isLoggedIn, async (req, res) => {
     }
     
     const taskId = req.params.id;
+    const { githubUrl, teamId } = req.body;
+    
+    // Validate GitHub URL is provided
+    if (!githubUrl || !githubUrl.trim()) {
+      return res.status(400).json({ error: 'GitHub repository URL is required to apply for a task' });
+    }
+    
+    if (!githubUrl.startsWith('http')) {
+      return res.status(400).json({ error: 'Please provide a valid GitHub repository URL' });
+    }
+    
     const task = await taskModel.findById(taskId);
     
     if (!task) {
@@ -423,12 +523,13 @@ app.post('/tasks/:id/apply', isLoggedIn, async (req, res) => {
       return res.status(400).json({ error: 'You have already applied to this task' });
     }
     
-    // Create submission
+    // Create submission with GitHub URL and in-progress status
     const submission = await submissionModel.create({
       taskId,
       studentId: req.user.id,
-      teamId: req.body.teamId || null,
-      status: 'pending'
+      teamId: teamId || null,
+      githubUrl: githubUrl,
+      status: 'in-progress'  // Changed from 'pending' to 'in-progress' to track work being done
     });
     
     // Update task applicants count
@@ -436,7 +537,7 @@ app.post('/tasks/:id/apply', isLoggedIn, async (req, res) => {
       $inc: { applicants: 1 }
     });
     
-    res.json({ success: true, message: 'Applied successfully', submission });
+    res.json({ success: true, message: 'Applied successfully with GitHub repository', submission });
   } catch (err) {
     res.status(500).json({ error: 'Failed to apply: ' + err.message });
   }
@@ -470,6 +571,210 @@ app.post('/tasks/:id/submit', isLoggedIn, async (req, res) => {
     res.json({ success: true, message: 'Submitted successfully', submission });
   } catch (err) {
     res.status(500).json({ error: 'Failed to submit' });
+  }
+});
+
+// ========== TASK COLLABORATION ROUTES ==========
+
+// Get chat history for a task
+app.get('/tasks/:id/chat-history', isLoggedIn, async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    
+    const messages = await chatModel
+      .find({ taskId })
+      .sort({ createdAt: 1 })
+      .populate('senderId', 'name email');
+    
+    res.json({ success: true, messages });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch chat history' });
+  }
+});
+
+// Contact mentor about a task
+app.post('/tasks/:id/contact-mentor', isLoggedIn, async (req, res) => {
+  try {
+    const { message, mentorId } = req.body;
+    const taskId = req.params.id;
+    
+    if (!message || !mentorId) {
+      return res.status(400).json({ error: 'Message and mentorId are required' });
+    }
+    
+    const user = await userModel.findById(req.user.id);
+    
+    const chat = await chatModel.create({
+      taskId,
+      senderId: req.user.id,
+      message,
+      senderName: user.name,
+      senderRole: req.user.role
+    });
+    
+    // Emit to mentor via socket.io
+    io.to(`task-${taskId}`).emit('mentor-message', {
+      senderId: req.user.id,
+      senderName: user.name,
+      message,
+      timestamp: new Date()
+    });
+    
+    res.json({ success: true, message: 'Message sent to mentor', chat });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Request video chat with mentor
+app.post('/tasks/:id/request-video-chat', isLoggedIn, async (req, res) => {
+  try {
+    const { reason, mentorId } = req.body;
+    const taskId = req.params.id;
+    
+    if (!reason || !mentorId) {
+      return res.status(400).json({ error: 'Reason and mentorId are required' });
+    }
+    
+    // Get student info for notification
+    const student = await userModel.findById(req.user.id);
+    const task = await taskModel.findById(taskId);
+    
+    // Generate unique session ID
+    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    
+    const videoRequest = await videoChatModel.create({
+      taskId,
+      studentId: req.user.id,
+      mentorId,
+      reason,
+      sessionId,
+      status: 'pending'
+    });
+    
+    // Create notification in database for mentor
+    const notification = await notificationModel.create({
+      userId: mentorId,
+      type: 'video_request',
+      title: `Video chat request from ${student.name}`,
+      message: `${student.name} has requested a video chat for "${task.title}"${reason ? `: ${reason}` : ''}`,
+      relatedTaskId: taskId,
+      relatedUserId: req.user.id,
+      isRead: false
+    });
+    
+    // Notify mentor via socket.io (real-time)
+    io.to(`mentor-${mentorId}`).emit('video-chat-request', {
+      videoRequestId: videoRequest._id,
+      studentId: req.user.id,
+      studentName: student.name,
+      taskId,
+      taskTitle: task.title,
+      reason,
+      timestamp: new Date(),
+      notificationId: notification._id
+    });
+    
+    res.json({ success: true, message: 'Video chat request sent', videoRequest });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to request video chat' });
+  }
+});
+
+// Complete a video chat session
+app.post('/video-chat/:sessionId/complete', isLoggedIn, async (req, res) => {
+  try {
+    const { duration } = req.body;
+    const { sessionId } = req.params;
+    
+    // Find and update the video chat session
+    const videoChat = await videoChatModel.findOneAndUpdate(
+      { sessionId },
+      {
+        status: 'completed',
+        duration: duration || 0,
+        completedAt: new Date()
+      },
+      { new: true }
+    );
+    
+    if (!videoChat) {
+      return res.status(404).json({ error: 'Video chat session not found' });
+    }
+    
+    // Emit completion notification
+    io.to(`mentor-${videoChat.mentorId}`).emit('video-chat-completed', {
+      sessionId,
+      duration: duration || 0
+    });
+    
+    io.to(`student-${videoChat.studentId}`).emit('video-chat-completed', {
+      sessionId,
+      duration: duration || 0
+    });
+    
+    res.json({ success: true, message: 'Video chat completed', videoChat });
+  } catch (err) {
+    console.error('Video chat completion error:', err);
+    res.status(500).json({ error: 'Failed to complete video chat' });
+  }
+});
+
+// Complete a task (report completion)
+app.post('/tasks/:id/complete', isLoggedIn, async (req, res) => {
+  try {
+    const { notes, githubUrl } = req.body;
+    const taskId = req.params.id;
+    
+    if (!githubUrl || !githubUrl.trim()) {
+      return res.status(400).json({ error: 'GitHub repository URL is required' });
+    }
+    
+    const submission = await submissionModel.findOneAndUpdate(
+      { taskId, studentId: req.user.id },
+      {
+        status: 'submitted',
+        notes: notes || '',
+        githubUrl: githubUrl,
+        submittedAt: new Date()
+      },
+      { new: true }
+    ).populate('taskId').populate('studentId');
+    
+    if (!submission) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    
+    // Notify mentor
+    const mentor = submission.taskId.mentorId;
+    
+    // Create notification in database
+    const notification = await notificationModel.create({
+      userId: mentor,
+      type: 'task_completion',
+      title: `Task submission from ${submission.studentId.name}`,
+      message: `${submission.studentId.name} has completed "${submission.taskId.title}" and submitted their work`,
+      relatedTaskId: taskId,
+      relatedUserId: req.user.id,
+      isRead: false
+    });
+    
+    // Emit Socket.io event for real-time notification
+    io.to(`mentor-${mentor}`).emit('task-completion-report', {
+      submissionId: submission._id,
+      studentId: req.user.id,
+      studentName: submission.studentId.name,
+      taskId,
+      taskTitle: submission.taskId.title,
+      notes,
+      githubUrl,
+      timestamp: new Date(),
+      notificationId: notification._id
+    });
+    
+    res.json({ success: true, message: 'Task completion reported', submission });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to report completion' });
   }
 });
 
@@ -544,6 +849,23 @@ app.get('/team/:id', isLoggedIn, async (req, res) => {
     
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
+    }
+    
+    res.json({ success: true, team });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch team' });
+  }
+});
+
+// Get current user's team
+app.get('/team/my-team', isLoggedIn, async (req, res) => {
+  try {
+    const team = await teamModel.findOne({ members: req.user.id })
+      .populate('members', 'name email')
+      .populate('leaderId', 'name email');
+    
+    if (!team) {
+      return res.json({ success: true, team: null, message: 'No team found' });
     }
     
     res.json({ success: true, team });
@@ -686,34 +1008,121 @@ app.get('/mentor/submissions', isLoggedIn, async (req, res) => {
   }
 });
 
-// Evaluate submission
-app.post('/mentor/evaluate/:submissionId', isLoggedIn, async (req, res) => {
+// ========== NOTIFICATIONS APIs ==========
+
+// Get user notifications
+app.get('/notifications', isLoggedIn, async (req, res) => {
+  try {
+    const notifications = await notificationModel.find({ userId: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(20);
+    
+    res.json({ success: true, notifications });
+  } catch (err) {
+    console.error('Get notifications error:', err);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+// Mark notification as read
+app.post('/notifications/:id/read', isLoggedIn, async (req, res) => {
+  try {
+    const notification = await notificationModel.findByIdAndUpdate(
+      req.params.id,
+      { isRead: true },
+      { new: true }
+    );
+    
+    if (!notification) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+    
+    res.json({ success: true, notification });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to mark notification' });
+  }
+});
+
+// ========== BADGES APIs ==========
+
+// Get user badges
+app.get('/badges', isLoggedIn, async (req, res) => {
+  try {
+    const user = await userModel.findById(req.user.id).populate('badges');
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get badge details
+    const badges = await badgeModel.find({ _id: { $in: user.badges || [] } });
+    
+    res.json({ success: true, badges });
+  } catch (err) {
+    console.error('Get badges error:', err);
+    res.status(500).json({ error: 'Failed to fetch badges' });
+  }
+});
+
+// ========== TEAM CHAT APIs ==========
+
+// Get team chat history
+app.get('/team/:id/chat-history', isLoggedIn, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const messages = await teamChatModel.find({ teamId: id })
+      .sort({ createdAt: -1 })
+      .limit(50);
+    
+    res.json({ success: true, messages: messages.reverse() });
+  } catch (err) {
+    console.error('Get team chat history error:', err);
+    res.status(500).json({ error: 'Failed to fetch chat history' });
+  }
+});
+
+// ========== MENTOR ENHANCED APIs ==========
+
+// Get teams that applied for a task
+app.get('/mentor/task/:id/applications', isLoggedIn, async (req, res) => {
   try {
     if (req.user.role !== 'mentor') {
       return res.status(403).json({ error: 'Access denied. Mentors only.' });
     }
     
-    const { scores, feedback, totalScore } = req.body;
+    const task = await taskModel.findById(req.params.id).populate('applications.teamId');
     
-    const submission = await submissionModel.findByIdAndUpdate(
-      req.params.submissionId,
-      {
-        scores,
-        feedback,
-        totalScore,
-        status: 'reviewed',
-        reviewedAt: new Date()
-      },
-      { new: true }
-    );
-    
-    if (!submission) {
-      return res.status(404).json({ error: 'Submission not found' });
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
     }
     
-    res.json({ success: true, message: 'Evaluation submitted', submission });
+    // Verify task belongs to mentor
+    if (task.mentorId.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Unauthorized access to this task' });
+    }
+    
+    // Get detailed application info
+    const detailedApplications = await Promise.all(
+      (task.applications || []).map(async (app) => {
+        const team = await teamModel.findById(app.teamId).populate('members');
+        return {
+          _id: app._id,
+          teamId: app.teamId,
+          teamName: team?.name || 'Unknown Team',
+          memberCount: team?.members?.length || 0,
+          leader: team?.leader,
+          members: team?.members || [],
+          status: app.status || 'pending',
+          appliedAt: app.appliedAt || new Date(),
+          message: app.message || ''
+        };
+      })
+    );
+    
+    res.json({ success: true, applications: detailedApplications });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to evaluate' });
+    console.error('Get applications error:', err);
+    res.status(500).json({ error: 'Failed to fetch applications' });
   }
 });
 

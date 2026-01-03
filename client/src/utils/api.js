@@ -81,10 +81,10 @@ export const getTaskById = async (taskId) => {
   return apiCall(`/tasks/${taskId}`);
 };
 
-export const applyToTask = async (taskId, teamId = null) => {
+export const applyToTask = async (taskId, applicationData = {}) => {
   return apiCall(`/tasks/${taskId}/apply`, {
     method: 'POST',
-    body: JSON.stringify({ teamId }),
+    body: JSON.stringify(applicationData),
   });
 };
 
@@ -115,10 +115,41 @@ export const getTeamDetails = async (teamId) => {
   return apiCall(`/team/${teamId}`);
 };
 
+export const getUserTeam = async () => {
+  return apiCall('/team/my-team');
+};
+
 export const leaveTeam = async (teamId) => {
   return apiCall(`/team/${teamId}/leave`, {
     method: 'POST',
   });
+};
+
+// ========== TASK DETAIL & COLLABORATION APIs ==========
+
+export const contactMentor = async (taskId, messageData) => {
+  return apiCall(`/tasks/${taskId}/contact-mentor`, {
+    method: 'POST',
+    body: JSON.stringify(messageData),
+  });
+};
+
+export const requestVideoChat = async (taskId, requestData) => {
+  return apiCall(`/tasks/${taskId}/request-video-chat`, {
+    method: 'POST',
+    body: JSON.stringify(requestData),
+  });
+};
+
+export const completeTask = async (taskId, completionData) => {
+  return apiCall(`/tasks/${taskId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(completionData),
+  });
+};
+
+export const getChatHistory = async (taskId) => {
+  return apiCall(`/tasks/${taskId}/chat-history`);
 };
 
 // ========== MENTOR APIs ==========
@@ -154,4 +185,41 @@ export const updateMentorProfile = async (profileData) => {
     method: 'POST',
     body: JSON.stringify(profileData),
   });
+};
+
+// ========== NOTIFICATIONS APIs ==========
+
+export const getNotifications = async () => {
+  return apiCall('/notifications');
+};
+
+export const markNotificationRead = async (notificationId) => {
+  return apiCall(`/notifications/${notificationId}/read`, {
+    method: 'POST',
+  });
+};
+
+// ========== BADGES APIs ==========
+
+export const getBadges = async () => {
+  return apiCall('/badges');
+};
+
+// ========== TEAM CHAT APIs ==========
+
+export const getTeamChatHistory = async (teamId) => {
+  return apiCall(`/team/${teamId}/chat-history`);
+};
+
+// ========== VIDEO CHAT APIs ==========
+
+export const completeVideoChat = async (sessionId, data) => {
+  return apiCall(`/video-chat/${sessionId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+export const getVideoChatHistory = async (taskId) => {
+  return apiCall(`/tasks/${taskId}/video-chat-history`);
 };

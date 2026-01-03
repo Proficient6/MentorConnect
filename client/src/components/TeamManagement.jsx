@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Users, Copy, Check } from 'lucide-react';
-import { createTeam, joinTeam, leaveTeam } from '../utils/api';
+import { createTeam, joinTeam, leaveTeam, getUserTeam } from '../utils/api';
 
 // Team Management Component with backend integration
 function TeamManagement({ setCurrentPage }) {
-  // State for current view
-  const [view, setView] = useState('selection');
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // State for current view - get from URL params or default to 'selection'
+  const [view, setView] = useState(searchParams.get('action') || 'selection');
   const [teamCode, setTeamCode] = useState('');
   const [teamName, setTeamName] = useState('');
   const [currentTeam, setCurrentTeam] = useState(null);
@@ -14,6 +17,32 @@ function TeamManagement({ setCurrentPage }) {
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // Fetch user's team on component mount
+  useEffect(() => {
+    fetchUserTeam();
+  }, []);
+  
+  // Update URL when view changes
+  useEffect(() => {
+    if (view === 'selection') {
+      setSearchParams({});
+    } else {
+      setSearchParams({ action: view });
+    }
+  }, [view, setSearchParams]);
+  
+  const fetchUserTeam = async () => {
+    try {
+      const response = await getUserTeam();
+      if (response.success && response.team) {
+        setCurrentTeam(response.team);
+        setView('team');
+      }
+    } catch (err) {
+      console.log('No existing team found');
+    }
+  };
 
   // Handle create team with API call
   const handleCreateTeam = async () => {
