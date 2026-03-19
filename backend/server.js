@@ -789,7 +789,6 @@ app.post('/team/create', isLoggedIn, async (req, res) => {
     
     const { name } = req.body;
     
-    // Generate unique 6-character code
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     
     const team = await teamModel.create({
@@ -799,7 +798,6 @@ app.post('/team/create', isLoggedIn, async (req, res) => {
       members: [req.user.id]
     });
     
-    // Populate members data
     await team.populate('members', 'name email');
     
     res.json({ success: true, message: 'Team created', team });
@@ -822,16 +820,13 @@ app.post('/team/join', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: 'Invalid team code' });
     }
     
-    // Check if already a member
     if (team.members.includes(req.user.id)) {
       return res.status(400).json({ error: 'You are already a member of this team' });
     }
     
-    // Add member
     team.members.push(req.user.id);
     await team.save();
     
-    // Populate members data
     await team.populate('members', 'name email');
     
     res.json({ success: true, message: 'Joined team successfully', team });
@@ -840,24 +835,7 @@ app.post('/team/join', isLoggedIn, async (req, res) => {
   }
 });
 
-// Get team details
-app.get('/team/:id', isLoggedIn, async (req, res) => {
-  try {
-    const team = await teamModel.findById(req.params.id)
-      .populate('members', 'name email')
-      .populate('leaderId', 'name email');
-    
-    if (!team) {
-      return res.status(404).json({ error: 'Team not found' });
-    }
-    
-    res.json({ success: true, team });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch team' });
-  }
-});
-
-// Get current user's team
+// ✅ my-team MUST be before /team/:id
 app.get('/team/my-team', isLoggedIn, async (req, res) => {
   try {
     const team = await teamModel.findOne({ members: req.user.id })
@@ -866,6 +844,23 @@ app.get('/team/my-team', isLoggedIn, async (req, res) => {
     
     if (!team) {
       return res.json({ success: true, team: null, message: 'No team found' });
+    }
+    
+    res.json({ success: true, team });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch team' });
+  }
+});
+
+// Get team details — /team/:id AFTER /team/my-team
+app.get('/team/:id', isLoggedIn, async (req, res) => {
+  try {
+    const team = await teamModel.findById(req.params.id)
+      .populate('members', 'name email')
+      .populate('leaderId', 'name email');
+    
+    if (!team) {
+      return res.status(404).json({ error: 'Team not found' });
     }
     
     res.json({ success: true, team });
@@ -887,10 +882,8 @@ app.post('/team/:id/leave', isLoggedIn, async (req, res) => {
       return res.status(404).json({ error: 'Team not found' });
     }
     
-    // Remove member
     team.members = team.members.filter(m => m.toString() !== req.user.id);
     
-    // If leader leaves, assign new leader or delete team
     if (team.leaderId.toString() === req.user.id) {
       if (team.members.length > 0) {
         team.leaderId = team.members[0];
@@ -906,7 +899,6 @@ app.post('/team/:id/leave', isLoggedIn, async (req, res) => {
     res.status(500).json({ error: 'Failed to leave team' });
   }
 });
-
 // ========== MENTOR ROUTES ==========
 
 // Get mentor profile

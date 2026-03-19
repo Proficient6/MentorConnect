@@ -3,64 +3,59 @@ import { useSearchParams } from 'react-router-dom';
 import { Users, Copy, Check } from 'lucide-react';
 import { createTeam, joinTeam, leaveTeam, getUserTeam } from '../utils/api';
 
-// Team Management Component with backend integration
 function TeamManagement({ setCurrentPage }) {
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // State for current view - get from URL params or default to 'selection'
-  const [view, setView] = useState(searchParams.get('action') || 'selection');
+  const [view, setView] = useState('loading'); // Start with 'loading' to avoid flicker
   const [teamCode, setTeamCode] = useState('');
   const [teamName, setTeamName] = useState('');
   const [currentTeam, setCurrentTeam] = useState(null);
   const [copied, setCopied] = useState(false);
-  
-  // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
-  // Fetch user's team on component mount
+
+  // Always fetch team on mount — this is the source of truth
   useEffect(() => {
     fetchUserTeam();
   }, []);
-  
-  // Update URL when view changes
+
+  // Only sync URL after we know the real view
   useEffect(() => {
-    if (view === 'selection') {
+    if (view === 'loading') return;
+    if (view === 'selection' || view === 'team') {
       setSearchParams({});
     } else {
       setSearchParams({ action: view });
     }
   }, [view, setSearchParams]);
-  
+
   const fetchUserTeam = async () => {
     try {
       const response = await getUserTeam();
       if (response.success && response.team) {
         setCurrentTeam(response.team);
-        setView('team');
+        setView('team'); // User is in a team → show team view
+      } else {
+        setView('selection'); // No team → show selection
       }
     } catch (err) {
       console.log('No existing team found');
+      setView('selection'); // On error, fall back to selection
     }
   };
 
-  // Handle create team with API call
   const handleCreateTeam = async () => {
     if (!teamName.trim()) {
       setError('Please enter a team name');
       return;
     }
-
     setIsLoading(true);
     setError('');
-
     try {
       const response = await createTeam(teamName);
-      
       if (response.success) {
         setCurrentTeam(response.team);
         setView('team');
-        alert('Team created successfully!');
       }
     } catch (err) {
       setError(err.message || 'Failed to create team');
@@ -69,23 +64,18 @@ function TeamManagement({ setCurrentPage }) {
     }
   };
 
-  // Handle join team with API call
   const handleJoinTeam = async () => {
     if (!teamCode.trim()) {
       setError('Please enter a team code');
       return;
     }
-
     setIsLoading(true);
     setError('');
-
     try {
       const response = await joinTeam(teamCode);
-      
       if (response.success) {
         setCurrentTeam(response.team);
         setView('team');
-        alert('Successfully joined the team!');
       }
     } catch (err) {
       setError(err.message || 'Failed to join team. Invalid code?');
@@ -94,31 +84,23 @@ function TeamManagement({ setCurrentPage }) {
     }
   };
 
-  // Copy team code to clipboard
   const copyToClipboard = () => {
     navigator.clipboard.writeText(currentTeam?.code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Handle leave team with API call
   const handleLeaveTeam = async () => {
-    if (!window.confirm('Are you sure you want to leave this team?')) {
-      return;
-    }
-
+    if (!window.confirm('Are you sure you want to leave this team?')) return;
     setIsLoading(true);
     setError('');
-
     try {
       const response = await leaveTeam(currentTeam._id);
-      
       if (response.success) {
         setCurrentTeam(null);
-        setView('selection');
         setTeamCode('');
         setTeamName('');
-        alert('Left team successfully');
+        setView('selection'); // Back to selection after leaving
       }
     } catch (err) {
       setError(err.message || 'Failed to leave team');
@@ -127,13 +109,22 @@ function TeamManagement({ setCurrentPage }) {
     }
   };
 
-  // Render team selection view
+  // ── Loading state (prevents flickering to wrong view) ──
+  if (view === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-500 text-lg">Loading your team...</p>
+      </div>
+    );
+  }
+
+  // ── Selection view ──
   if (view === 'selection') {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-800 mb-8 text-center">Team Management</h1>
-          
+
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               {error}
@@ -141,16 +132,12 @@ function TeamManagement({ setCurrentPage }) {
           )}
 
           <div className="grid md:grid-cols-2 gap-6">
-            
-            {/* Create Team Card */}
             <div className="bg-white rounded-lg shadow-sm p-8 text-center hover:shadow-md transition-shadow">
               <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Users className="text-white" size={32} />
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-3">Create Team</h2>
-              <p className="text-gray-600 mb-6">
-                Start a new team and invite others to join using a team code
-              </p>
+              <p className="text-gray-600 mb-6">Start a new team and invite others using a team code</p>
               <button
                 onClick={() => setView('create')}
                 className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 w-full"
@@ -159,15 +146,12 @@ function TeamManagement({ setCurrentPage }) {
               </button>
             </div>
 
-            {/* Join Team Card */}
             <div className="bg-white rounded-lg shadow-sm p-8 text-center hover:shadow-md transition-shadow">
               <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Users className="text-white" size={32} />
               </div>
               <h2 className="text-2xl font-bold text-gray-800 mb-3">Join Team</h2>
-              <p className="text-gray-600 mb-6">
-                Join an existing team using the code shared by your team leader
-              </p>
+              <p className="text-gray-600 mb-6">Join an existing team using the code from your team leader</p>
               <button
                 onClick={() => setView('join')}
                 className="px-6 py-3 bg-white text-gray-800 border-2 border-gray-800 rounded-lg hover:bg-gray-100 w-full"
@@ -181,14 +165,14 @@ function TeamManagement({ setCurrentPage }) {
     );
   }
 
-  // Render create team view
+  // ── Create team view ──
   if (view === 'create') {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-md mx-auto">
           <div className="bg-white rounded-lg shadow-sm p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Create New Team</h2>
-            
+
             {error && (
               <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
                 {error}
@@ -197,9 +181,7 @@ function TeamManagement({ setCurrentPage }) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Team Name
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Team Name</label>
                 <input
                   type="text"
                   value={teamName}
@@ -209,7 +191,6 @@ function TeamManagement({ setCurrentPage }) {
                   disabled={isLoading}
                 />
               </div>
-
               <button
                 onClick={handleCreateTeam}
                 className="w-full py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -217,12 +198,8 @@ function TeamManagement({ setCurrentPage }) {
               >
                 {isLoading ? 'Creating...' : 'Create Team'}
               </button>
-
               <button
-                onClick={() => {
-                  setView('selection');
-                  setError('');
-                }}
+                onClick={() => { setView('selection'); setError(''); }}
                 className="w-full py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-100"
                 disabled={isLoading}
               >
@@ -235,14 +212,14 @@ function TeamManagement({ setCurrentPage }) {
     );
   }
 
-  // Render join team view
+  // ── Join team view ──
   if (view === 'join') {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-md mx-auto">
           <div className="bg-white rounded-lg shadow-sm p-8">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Join Team</h2>
-            
+
             {error && (
               <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
                 {error}
@@ -251,9 +228,7 @@ function TeamManagement({ setCurrentPage }) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Team Code
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Team Code</label>
                 <input
                   type="text"
                   value={teamCode}
@@ -263,11 +238,8 @@ function TeamManagement({ setCurrentPage }) {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-800 uppercase"
                   disabled={isLoading}
                 />
-                <p className="text-sm text-gray-500 mt-2">
-                  Ask your team leader for the team code
-                </p>
+                <p className="text-sm text-gray-500 mt-2">Ask your team leader for the team code</p>
               </div>
-
               <button
                 onClick={handleJoinTeam}
                 className="w-full py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -275,12 +247,8 @@ function TeamManagement({ setCurrentPage }) {
               >
                 {isLoading ? 'Joining...' : 'Join Team'}
               </button>
-
               <button
-                onClick={() => {
-                  setView('selection');
-                  setError('');
-                }}
+                onClick={() => { setView('selection'); setError(''); }}
                 className="w-full py-3 bg-white text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-100"
                 disabled={isLoading}
               >
@@ -293,19 +261,18 @@ function TeamManagement({ setCurrentPage }) {
     );
   }
 
-  // Render team view (after creating or joining)
+  // ── Team dashboard view ──
   if (view === 'team' && currentTeam) {
     return (
       <div className="min-h-screen bg-gray-50 py-8 px-4">
         <div className="max-w-4xl mx-auto">
-          
+
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
               {error}
             </div>
           )}
 
-          {/* Team Header */}
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
             <div className="flex items-center justify-between">
               <div>
@@ -322,11 +289,9 @@ function TeamManagement({ setCurrentPage }) {
             </div>
           </div>
 
-          {/* Team Code */}
           <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Team Code</h2>
             <p className="text-gray-600 mb-3">Share this code with others to invite them</p>
-            
             <div className="flex items-center gap-3">
               <div className="flex-1 px-4 py-3 bg-gray-100 rounded-lg text-center">
                 <span className="text-2xl font-bold text-gray-800 tracking-widest">
@@ -343,14 +308,12 @@ function TeamManagement({ setCurrentPage }) {
             </div>
           </div>
 
-          {/* Team Members */}
           <div className="bg-white rounded-lg shadow-sm p-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               Team Members ({currentTeam.members?.length || 0})
             </h2>
-            
             <div className="space-y-3">
-              {currentTeam.members && currentTeam.members.map((member, index) => (
+              {currentTeam.members?.map((member, index) => (
                 <div key={member._id || index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-gray-800 text-white rounded-full flex items-center justify-center text-lg font-bold">
@@ -362,8 +325,8 @@ function TeamManagement({ setCurrentPage }) {
                     </div>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                    member._id === currentTeam.leaderId 
-                      ? 'bg-blue-100 text-blue-800' 
+                    member._id === currentTeam.leaderId
+                      ? 'bg-blue-100 text-blue-800'
                       : 'bg-gray-200 text-gray-800'
                   }`}>
                     {member._id === currentTeam.leaderId ? 'Leader' : 'Member'}
@@ -372,6 +335,7 @@ function TeamManagement({ setCurrentPage }) {
               ))}
             </div>
           </div>
+
         </div>
       </div>
     );
