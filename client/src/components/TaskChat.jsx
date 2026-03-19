@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, MessageCircle, X, MessageSquare } from 'lucide-react';
 import io from 'socket.io-client';
+import { getChatHistory } from '../utils/api';
 
 function TaskChat({ taskId, userData }) {
   const [messages, setMessages] = useState([]);
@@ -8,10 +9,33 @@ function TaskChat({ taskId, userData }) {
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isOpen, setIsOpen] = useState(false); // Chat open/close state
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef(null);
+
+  // Load chat history from database
+  useEffect(() => {
+    const loadChatHistory = async () => {
+      try {
+        const response = await getChatHistory(taskId);
+        if (response.success && response.messages) {
+          setMessages(response.messages);
+        }
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (taskId) {
+      loadChatHistory();
+    }
+  }, [taskId]);
 
   // Socket.io connection
   useEffect(() => {
+    if (!userData || !taskId) return;
+
     const socketInstance = io('http://localhost:3000', { withCredentials: true });
     setSocket(socketInstance);
 
@@ -32,7 +56,7 @@ function TaskChat({ taskId, userData }) {
     });
 
     return () => socketInstance.disconnect();
-  }, [taskId, userData.id]);
+  }, [taskId, userData?.id]);
 
   // Auto-scroll
   useEffect(() => {
@@ -48,6 +72,7 @@ function TaskChat({ taskId, userData }) {
       userId: userData.id,
       userName: userData.name,
       message: newMessage.trim(),
+      userRole: userData.role
     });
 
     setNewMessage('');
@@ -87,32 +112,44 @@ function TaskChat({ taskId, userData }) {
 
           {/* Messages */}
           <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-gray-50">
-            {messages.length === 0 ? (
+            {isLoading ? (
+              <div className="text-center text-gray-500 py-8">
+                <MessageCircle className="mx-auto mb-2" size={32} />
+                <p className="text-sm">Loading messages...</p>
+              </div>
+            ) : messages.length === 0 ? (
               <div className="text-center text-gray-500 py-8">
                 <MessageCircle className="mx-auto mb-2" size={32} />
                 <p className="text-sm">No messages yet. Start the conversation!</p>
               </div>
             ) : (
-              messages.map((msg, index) => (
-                <div
-                  key={index}
-                  className={`flex ${msg.userId === userData.id ? 'justify-end' : 'justify-start'}`}
-                >
+              messages.map((msg) => {
+                const senderId = msg.senderId?._id || msg.userId;
+                const isOwnMessage = senderId === userData?.id;
+                const senderName = msg.senderName || msg.userName || 'Unknown';
+                const timestamp = msg.createdAt || msg.timestamp;
+                
+                return (
                   <div
-                    className={`max-w-xs px-4 py-2 rounded-lg ${
-                      msg.userId === userData.id ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-800'
-                    }`}
+                    key={msg._id || `${msg.userId}-${msg.timestamp}`}
+                    className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                   >
-                    <p className="text-xs font-semibold mb-1">
-                      {msg.userId === userData.id ? 'You' : msg.userName}
-                    </p>
-                    <p className="text-sm">{msg.message}</p>
-                    <p className="text-xs mt-1 opacity-70">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
-                    </p>
+                    <div
+                      className={`max-w-xs px-4 py-2 rounded-lg ${
+                        isOwnMessage ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      <p className="text-xs font-semibold mb-1">
+                        {isOwnMessage ? 'You' : senderName}
+                      </p>
+                      <p className="text-sm">{msg.message}</p>
+                      <p className="text-xs mt-1 opacity-70">
+                        {new Date(timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
             <div ref={messagesEndRef} />
           </div>

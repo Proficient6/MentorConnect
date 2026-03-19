@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Calendar, Tag } from 'lucide-react';
+import { Search, Calendar, Tag, X, Video, HelpCircle } from 'lucide-react';
 import { getAllTasks, applyToTask } from '../utils/api';
 
 // Browse Tasks Component with backend integration
@@ -11,8 +11,12 @@ function BrowseTasks({ setCurrentPage }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [applyingTask, setApplyingTask] = useState(null);
-
-  // Fetch tasks on mount
+  
+  // Modal state for applying with GitHub URL
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [selectedTaskForApply, setSelectedTaskForApply] = useState(null);
+  const [githubUrl, setGithubUrl] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   useEffect(() => {
     fetchTasks();
   }, []);
@@ -40,23 +44,43 @@ function BrowseTasks({ setCurrentPage }) {
   });
 
   // Handle apply to task with API call
-  const handleApply = async (taskId) => {
-    setApplyingTask(taskId);
+  const handleApplyClick = (taskId) => {
+    setSelectedTaskForApply(taskId);
+    setShowApplyModal(true);
+    setGithubUrl('');
+    setError('');
+  };
+
+  const handleApplySubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!githubUrl || !githubUrl.trim()) {
+      setError('Please provide your GitHub repository URL');
+      return;
+    }
+    
+    if (!githubUrl.startsWith('http')) {
+      setError('Please provide a valid GitHub repository URL (starting with http)');
+      return;
+    }
+
+    setIsSubmitting(true);
     setError('');
 
     try {
-      const response = await applyToTask(taskId);
+      const response = await applyToTask(selectedTaskForApply, { githubUrl });
       
       if (response.success) {
-        alert('Application submitted! The mentor will review your request.');
+        alert('Application submitted with GitHub repository! The mentor will review your request.');
         // Refresh tasks to update applicant count
         fetchTasks();
+        setShowApplyModal(false);
+        setGithubUrl('');
       }
     } catch (err) {
       setError(err.message || 'Failed to apply to task');
-      alert(err.message || 'Failed to apply to task');
     } finally {
-      setApplyingTask(null);
+      setIsSubmitting(false);
     }
   };
 
@@ -76,6 +100,15 @@ function BrowseTasks({ setCurrentPage }) {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Browse Tasks</h1>
           <p className="text-gray-600">Find and apply to tasks that match your skills</p>
+        </div>
+
+        {/* Video Call Feature Info Banner */}
+        <div className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4 flex items-start gap-3">
+          <Video size={20} className="text-purple-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-gray-800">💬 Need Help? Request a Video Call</p>
+            <p className="text-sm text-gray-700 mt-1">Once you apply to a task and start working, you can request a video call with your mentor anytime for guidance, code reviews, or discussions. Just click <span className="font-medium">"Request Call"</span> on your dashboard!</p>
+          </div>
         </div>
 
         {/* Error Message */}
@@ -166,11 +199,10 @@ function BrowseTasks({ setCurrentPage }) {
                 </div>
 
                 <button
-                  onClick={() => handleApply(task._id)}
+                  onClick={() => handleApplyClick(task._id)}
                   className="px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={applyingTask === task._id}
                 >
-                  {applyingTask === task._id ? 'Applying...' : 'Apply'}
+                  Apply
                 </button>
               </div>
             </div>
@@ -183,6 +215,75 @@ function BrowseTasks({ setCurrentPage }) {
             </div>
           )}
         </div>
+
+        {/* Apply Modal */}
+        {showApplyModal && selectedTaskForApply && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-800">Apply to Task</h2>
+                <button 
+                  onClick={() => setShowApplyModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <p className="text-gray-600 mb-4">
+                Please provide your GitHub repository URL to apply for this task
+              </p>
+
+              <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <span className="font-semibold">✓ After applying:</span> You can request video calls with your mentor directly from your dashboard for guidance and feedback.
+                </p>
+              </div>
+
+              {error && (
+                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleApplySubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    GitHub Repository URL <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/username/repo"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-gray-800"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Make sure your repository is public so the mentor can review your code
+                  </p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 px-6 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 font-medium disabled:opacity-50"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? 'Applying...' : 'Apply'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowApplyModal(false)}
+                    className="flex-1 px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
